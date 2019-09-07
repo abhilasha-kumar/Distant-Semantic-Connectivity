@@ -31,7 +31,8 @@ sem$mean_ldtz = round(sem$mean_ldtz, 2)
 sem$mean_nmgz = round(sem$mean_nmgz, 2)
 
 itemlist = read.csv("KenettCompleteItemList.csv", header = TRUE, sep = ",")
-colnames(itemlist) = c("prime_word", "target_word", "ItemNo", "List", "proc")
+colnames(itemlist) = c("prime_word", "target_word", "ItemNo", "List", "proc", 
+                       "UndirectedPMFG", "PMFGPath", "ACN_0.1", "ACNPath_0.1", "ACN.r")
 itemlist$prime_word = paste(itemlist$prime_word, "")
 itemlist$target_word = paste(itemlist$target_word, "")
 sem$prime_word = as.character(sem$prime_word)
@@ -50,6 +51,24 @@ sem$target_word = ifelse(sem$target_word == "NAÃ\u008fVE ", "NA\xecVE ",
 sem = inner_join(sem, itemlist, by = c("prime_word", 
                                           "target_word", "proc"))
 
+sem  = sem %>%
+  mutate(UPMFG_Cat = ntile(UndirectedPMFG, 6))
+
+sem  = sem %>%
+  mutate(ACN.r.cat = ntile(ACN.r, 6))
+
+
+# sem$UPMFG_Cat = ifelse(sem$UndirectedPMFG >= 17, "17-25",
+#                                    ifelse(sem$UndirectedPMFG >=14, "14-16",
+#                             ifelse (sem$UndirectedPMFG >= 11, "11-13", 
+#                     ifelse (sem$UndirectedPMFG >= 7, "7-10",
+#                     ifelse (sem$UndirectedPMFG >= 4, "4-6", "1-3")))))
+
+sem$UPMFG_Cat = ordered(as.factor(as.character(sem$UPMFG_Cat)), 
+                            levels = c("1", "2", "3", "4", "5", "6"))
+sem$ACN.r.cat = ordered(as.factor(as.character(sem$ACN.r.cat)), 
+                            levels = c("1", "2", "3", "4", "5", "6"))
+
 sem = sem[order(sem$subject),]
 
 kenettproc= group_by(sem, ItemNo) %>%
@@ -65,6 +84,12 @@ directeditems  = group_by(sem_directed, ItemNo, directed) %>%
 directeditems_n = group_by(directeditems, directed) %>%
   summarise(n = n())
 
+pmfg_items = group_by(sem, subject, UPMFG_Cat) %>%
+  summarise(items = n())
+pmfg_items_rmisc = Rmisc::summarySE(pmfg_items, 
+                                    measurevar = "items",
+                                    groupvars = "UPMFG_Cat")
+
 subject_count = group_by(sem, subject) %>%
   summarise(n = n())
 
@@ -74,7 +99,7 @@ subject_count = group_by(sem, subject) %>%
 
 ```{r}
 item_dist = group_by(sem, proc, ItemNo) %>%
-  summarise_at(vars(pathlength, undirected, directed), mean)
+  summarise_at(vars(pathlength, undirected, directed, UndirectedPMFG), mean)
 ## count distribution of items 
 library(dplyr)
 undirected_items = group_by(item_dist, proc, pathlength, undirected) %>%
@@ -103,13 +128,53 @@ u_plot = undirected_rmisc %>%
              position = position_dodge(0.7))+
  theme_few()+
  scale_fill_colorblind()+
-   xlab("") + ylab("Proportion of Items") + 
+   xlab("ACN Path Length") + ylab("Proportion of Items") + 
   ggtitle("Items at Different Undirected SDN Path Lengths")  +
    theme(axis.text = element_text(size = rel(1)),
           axis.title = element_text(face = "bold", size = rel(1)),
           legend.title = element_text(face = "bold", size = rel(1)),
          plot.title = element_text(hjust = .5),
          strip.text.x = element_text(face = "bold", size = rel(1.4)))
+## u-pmfg
+
+undirected_pmfg_items = group_by(item_dist, proc, pathlength, UPMFG_Cat) %>%
+  summarize(undirecteditems = n())
+undirected_pmfg_items$undirectedpercent = undirected_pmfg_items$undirecteditems/40
+
+undirected_pmfg_rmisc = Rmisc::summarySE(undirected_pmfg_items,
+                                    measurevar = "undirectedpercent",
+                                    groupvars = c("pathlength", "UPMFG_Cat"))
+undirected_pmfg_rmisc$pathlengthfac = ordered(as.factor(as.character(undirected_pmfg_rmisc$pathlength)), 
+                            levels = c("1", "2", "3", "4", "6", "15"))
+
+undirected_pmfg_rmisc$UndirectedPMFGPaths = ordered(as.factor(as.character(undirected_pmfg_rmisc$UndirectedPMFG)),
+                            levels = c("1", "2", "3", "4", 
+                                       "5", "6", "7", "8", "9", "10", "11",
+                                       "12","13", "14", "15", "16", "17", "18",
+                                       "19", "20", "21", "22", "23", "24", "25"))
+# undirected pmfg plot
+
+library(ggplot2)
+library(ggthemes)
+
+ undirected_pmfg_rmisc %>% 
+  ggplot(aes(x = pathlengthfac, y = undirectedpercent, 
+                fill = UndirectedPMFG, group = UndirectedPMFG))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ geom_errorbar(aes(ymin=undirectedpercent - ci, ymax=undirectedpercent + ci), 
+             width=.2, color = "gray26", 
+             position = position_dodge(0.7))+
+ theme_few()+
+# scale_fill_colorblind()+
+   xlab("ACN Path Length") + ylab("Proportion of Items") + 
+  ggtitle("Items at Different Undirected SDN Path Lengths")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+ 
+ ## directed plot
 
 directed_items = group_by(item_dist, proc, pathlength, directed) %>%
   summarize(directeditems = n())
@@ -235,6 +300,47 @@ proportion_sem %>% mutate(WordPair = factor(Type,
   facet_wrap(~Population)+
     xlab("Network Path Length") + ylab("Proportion of Trials") + 
   ggtitle("Kenett Network Relatedness Judgments")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+```
+
+### Plotting U-PMFG Proportions
+
+``` {r warning=F, message=F, fig.align='center'}
+
+sem_decision_pmfg = group_by(sem, subject, UPMFG_Cat, Type ) %>%
+  summarize(Trials = n())
+library(tidyr)
+sem_decision_pmfg_wide = spread(sem_decision_pmfg, Type, Trials )
+
+sem_decision_pmfg_long = gather(sem_decision_pmfg_wide, Type, Trials, Related:Unrelated)
+
+sem_decision_pmfg_long$Trials = ifelse(is.na(sem_decision_pmfg_long$Trials), 0, 
+                                       sem_decision_pmfg_long$Trials)
+
+library(ggplot2)
+library(ggthemes)
+
+proportion_sem_pmfg = Rmisc::summarySE(sem_decision_pmfg_long,
+                                  measurevar = "Trials",
+                                  groupvars = c("UPMFG_Cat", "Type"))
+
+proportion_sem_pmfg %>% mutate(WordPair = factor(Type, 
+                                        levels = unique(Type),
+                    labels = c("Related", "Unrelated")))%>%
+  ggplot(aes(x = UPMFG_Cat, y = Trials, 
+                              fill = Type, group = Type))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ geom_errorbar(aes(ymin=Trials - se, ymax=Trials + se), 
+             width=.2, color = "gray26", 
+             position = position_dodge(0.7))+
+ theme_few()+
+ scale_fill_wsj()+
+    xlab("U-PMFG Path Length") + ylab("Number of Trials") + 
+  ggtitle("Undirected PMFG Network Relatedness Judgments")  +
    theme(axis.text = element_text(size = rel(1)),
           axis.title = element_text(face = "bold", size = rel(1)),
           legend.title = element_text(face = "bold", size = rel(1)),
@@ -399,6 +505,9 @@ proportion_sem_combined$sd100 = proportion_sem_combined$sd*100
 proportion_sem_combined$Decision = ifelse(proportion_sem_combined$Type == "Related",
                                   "Related Responses", "Unrelated Responses")
 
+proportion_sem_combined$Network = ordered(as.factor(as.character(proportion_sem_combined$Network)), 
+                            levels = c("Kenett et al., 2017", "Experiment 1"))
+
 proportion_sem_combined %>% mutate(WordPair = factor(Decision, 
                                         levels = unique(Decision),
                     labels = c("Related", "Unrelated")))%>%
@@ -420,6 +529,144 @@ proportion_sem_combined %>% mutate(WordPair = factor(Decision,
          strip.text.x = element_text(face = "bold", size = rel(1.4)))
 
 ```
+
+### SDN proportions
+
+#### Undirected
+
+```{r}
+sem_decision_undirected = group_by(sem, subject, undirected, Type ) %>%
+  summarize(Trials = n())
+
+sem_subjectrows  = group_by(sem_decision_undirected, subject) %>%
+  summarise(numrows = n())
+rows = which(sem_subjectrows$numrows < 8)
+
+subjects = sem_subjectrows[rows,]
+
+wide = tidyr::spread(sem_decision_undirected, Type, Trials)
+wide$Related= ifelse(is.na(wide$Related), 0, wide$Related)
+wide$Unrelated= ifelse(is.na(wide$Unrelated), 0, wide$Unrelated)
+
+sem_final_long = tidyr::gather(wide, Type, Trials, Related:Unrelated)
+
+sem_final_long$Trials = as.numeric(as.character(sem_final_long$Trials))
+
+sem_decision_agg_undirected = group_by(sem_final_long, 
+                                       undirected, Type ) %>%
+  summarise_at(vars(Trials), mean)
+
+sem_undirected_wide = tidyr::spread(sem_final_long,
+                                    Type, Trials)
+
+sem_undirected_wide$total = sem_undirected_wide$Related + sem_undirected_wide$Unrelated
+
+sem_undirected_wide$prop_r = sem_undirected_wide$Related/sem_undirected_wide$total
+sem_undirected_wide$prop_u = sem_undirected_wide$Unrelated/sem_undirected_wide$total
+
+sem_undirected_wide = sem_undirected_wide[,c(1,2,6, 7)]
+
+sem_undirected_final = tidyr::gather(sem_undirected_wide, Type, Proportion,
+                                     prop_r, prop_u)
+
+sem_undirected_final$undirectedfac = ordered(as.factor(as.character(sem_undirected_final$undirected)), 
+                            levels = c("1", "2", "3", "4"))
+
+sem_undirected_final_rmisc = Rmisc::summarySE(sem_undirected_final,
+                                              measurevar = "Proportion",
+                                              groupvars = c("undirectedfac", 
+                                                            "Type"))
+
+library(ggplot2)
+library(ggthemes)
+
+sem_undirected_final_rmisc %>% mutate(Type = factor(Type, 
+                                        levels = unique(Type),
+                    labels = c("Related", "Unrelated")))%>%
+  ggplot(aes(x = undirectedfac, y = Proportion, 
+                              fill = Type, group = Type))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ geom_errorbar(aes(ymin=Proportion - ci, ymax=Proportion + ci), 
+             width=.2, color = "gray26", 
+             position = position_dodge(0.7))+
+ theme_few()+
+ scale_fill_wsj()+
+    xlab("Network Path Length") + ylab("Proportion of Trials") + 
+  ggtitle("Undirected SDN Network Relatedness Judgments")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+
+```
+
+#### Directed
+```{r}
+sem_decision_directed = group_by(sem, subject, directed, Type ) %>%
+  summarize(Trials = n())
+
+wide = tidyr::spread(sem_decision_directed, Type, Trials)
+wide$Related= ifelse(is.na(wide$Related), 0, wide$Related)
+wide$Unrelated= ifelse(is.na(wide$Unrelated), 0, wide$Unrelated)
+
+sem_final_long = tidyr::gather(wide, Type, Trials, Related:Unrelated)
+
+sem_final_long$Trials = as.numeric(as.character(sem_final_long$Trials))
+
+sem_decision_agg_directed = group_by(sem_final_long, 
+                                       directed, Type ) %>%
+  summarise_at(vars(Trials), mean)
+
+sem_directed_wide = tidyr::spread(sem_final_long,
+                                    Type, Trials)
+
+sem_directed_wide$total = sem_directed_wide$Related + sem_directed_wide$Unrelated
+
+sem_directed_wide$prop_r = sem_directed_wide$Related/sem_directed_wide$total
+sem_directed_wide$prop_u = sem_directed_wide$Unrelated/sem_directed_wide$total
+
+sem_directed_wide = sem_directed_wide[,c(1,2,6, 7)]
+
+sem_directed_final = tidyr::gather(sem_directed_wide, Type, Proportion,
+                                     prop_r, prop_u)
+
+sem_directed_final$directedfac = ordered(as.factor(as.character(sem_directed_final$directed)), 
+                            levels = c("1", "2", "3", "4", 
+                                       "5", "6", "7", "8", "Inf"))
+
+sem_directed_final_rmisc = Rmisc::summarySE(sem_directed_final,
+                                              measurevar = "Proportion",
+                                              groupvars = c("directedfac", 
+                                                            "Type"))
+
+library(ggplot2)
+library(ggthemes)
+
+sem_directed_final_rmisc %>% mutate(D = factor(directedfac, 
+                                        levels = unique(directedfac),
+                    labels = c("1", "2", "3", "4", "5", "6","7", "8", "No Path")),
+                    Type = factor(Type, 
+                                        levels = unique(Type),
+                    labels = c("Related", "Unrelated")))%>%
+  ggplot(aes(x = D, y = Proportion, 
+                              fill = Type, group = Type))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ geom_errorbar(aes(ymin=Proportion - ci, ymax=Proportion + ci), 
+             width=.2, color = "gray26", 
+             position = position_dodge(0.7))+
+ theme_few()+
+ scale_fill_wsj()+
+    xlab("Network Path Length") + ylab("Proportion of Trials") + 
+  ggtitle("Directed SDN Network Relatedness Judgments")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+
+```
+
 
 
 
@@ -1164,12 +1411,12 @@ elpnorms$prime_word = as.character(elpnorms$prime_word)
 
 sem$prime_word = as.character(sem$prime_word)
 merged_sem_prime= inner_join(sem, elpnorms, by = "prime_word")
-merged_sem_prime = merged_sem_prime[,c(4,7,16,44)]
+merged_sem_prime = merged_sem_prime[,c(4,7,16,51)]
 
 colnames(elpnorms) = c("target_word", "target_concreteness")
 sem$target_word = as.character(sem$target_word)
 merged_sem_target= inner_join(sem, elpnorms, by = "target_word")
-merged_sem_target = merged_sem_target[,c(4,7, 17,44)]
+merged_sem_target = merged_sem_target[,c(4,7, 17,51)]
 
 merged_concretness = full_join(merged_sem_prime, merged_sem_target,
                            by = c("trial_index", "subject"))
@@ -1515,6 +1762,269 @@ geom_line()+
          strip.text.x = element_text(face = "bold", size = rel(1.4)))
 
 ```
+
+## Undirected PMFG
+```{r}
+items_undirected_pmfg = group_by(final_sem, UPMFG_Cat) %>%
+  summarise(items = n())
+
+items_undirected_pmfg_subject = group_by(final_sem, subject, UPMFG_Cat) %>%
+  summarise(items = n())
+
+undirected_pmfg_rmisc = Rmisc::summarySE(items_undirected_pmfg_subject, 
+                        measurevar = "items",
+                        groupvars = c("UPMFG_Cat"))
+
+
+# final_sem$undirectedpmfgfac = ordered(as.factor(as.character(final_sem$UndirectedPMFG)), 
+#                             levels = c("1", "2", "3", "4"))
+
+contrasts(final_sem$UPMFG_Cat) = contr.treatment(6, base = 2)
+
+m_undirected_pmfg = lmer(data = final_sem, zRT_trim~ UPMFG_Cat +
+                     mean_len + mean_logf + mean_ldtz + mean_conc +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_undirected_pmfg)
+
+m_undirected_pmfg_type = lmer(data = final_sem, zRT_trim~ UPMFG_Cat*Type +
+                     mean_len_c + mean_logf_c + mean_ldtz_c + mean_conc_c +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_undirected_pmfg_type)
+car::Anova(m_undirected_pmfg_type)
+```
+
+
+### Plot Item Distribution
+
+```{r}
+ggplot(undirected_pmfg_rmisc, aes(x = UPMFG_Cat, y = items))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ theme_few()+
+  xlab("Non-directed Path Length") + ylab("Number of Items") + 
+  ggtitle("Non-Directed Network Item Distribution")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+```
+
+### Plot Undirected PMFG 
+```{r}
+z_undirected_pmfg_rmisc = Rmisc::summarySE(final_sem, 
+                        measurevar = "zRT_trim",
+                        groupvars = c("UPMFG_Cat", "Type"))
+
+# z_undirected_rmisc$undirectedfac = ordered(as.factor(as.character(z_undirected_rmisc$undirectedfac)),                             levels = c("1", "2", "3", "4"))
+
+z_undirected_pmfg_rmisc$zRT_trim = as.numeric(z_undirected_pmfg_rmisc$zRT_trim)
+
+library(ggplot2)
+library(ggthemes)
+
+z_undirected_pmfg_rmisc %>% 
+  mutate(Decision = factor(Type, 
+    levels = unique(Type),
+                    labels = c("Related", "Unrelated"))) %>%
+  ggplot(aes(x = UPMFG_Cat, y = zRT_trim, group = Decision, color = Decision))+
+  geom_point()+
+#  geom_smooth(method = "loess")+
+geom_line()+
+   geom_errorbar(aes(ymin=zRT_trim - ci, ymax=zRT_trim + ci), 
+              width=.2, color = "gray30", 
+              position = position_dodge(0.05))+
+ theme_few()+
+    ylim(-0.35, 0.35)+
+  scale_color_wsj()+
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,10,15,20))+
+    xlab("Undirected PMFG Quintile") + ylab("z-RT") + 
+  ggtitle("PMFG Undirected Step Distance Network")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+
+```
+
+## ACN Unfiltered
+```{r}
+items_acn_unfiltered= group_by(final_sem, ACN.r.cat) %>%
+  summarise(items = n())
+
+items_acn_unfiltered_subject = group_by(final_sem, subject, ACN.r.cat) %>%
+  summarise(items = n())
+
+acn_unfiltered_rmisc = Rmisc::summarySE(items_acn_unfiltered_subject, 
+                        measurevar = "items",
+                        groupvars = c("ACN.r.cat"))
+
+
+# final_sem$undirectedpmfgfac = ordered(as.factor(as.character(final_sem$UndirectedPMFG)), 
+#                             levels = c("1", "2", "3", "4"))
+
+contrasts(final_sem$ACN.r.cat) = contr.treatment(6, base = 2)
+
+m_acn_unfiltered = lmer(data = final_sem, zRT_trim~ ACN.r.cat +
+                     mean_len + mean_logf + mean_ldtz + mean_conc +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_acn_unfiltered)
+
+m_acn_unfiltered_type = lmer(data = final_sem, zRT_trim~ ACN.r.cat*Type +
+                     mean_len_c + mean_logf_c + mean_ldtz_c + mean_conc_c +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_acn_unfiltered)
+car::Anova(m_acn_unfiltered)
+```
+
+
+### Plot Item Distribution
+
+```{r}
+ggplot(acn_unfiltered_rmisc, aes(x = ACN.r.cat, y = items))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ theme_few()+
+  xlab("Non-directed Path Length") + ylab("Number of Items") + 
+  ggtitle("Non-Directed Network Item Distribution")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+```
+
+### Plot ACN unfiltered
+```{r}
+z_acn_unfiltered_rmisc = Rmisc::summarySE(final_sem, 
+                        measurevar = "zRT_trim",
+                        groupvars = c("ACN.r.cat", "Type"))
+
+# z_undirected_rmisc$undirectedfac = ordered(as.factor(as.character(z_undirected_rmisc$undirectedfac)),                             levels = c("1", "2", "3", "4"))
+
+z_acn_unfiltered_rmisc$ACNUnfiltered = 7- as.numeric(z_acn_unfiltered_rmisc$ACN.r.cat)
+
+z_acn_unfiltered_rmisc$zRT_trim = as.numeric(z_acn_unfiltered_rmisc$zRT_trim)
+
+library(ggplot2)
+library(ggthemes)
+
+z_acn_unfiltered_rmisc %>% 
+  mutate(Decision = factor(Type, 
+    levels = unique(Type),
+                    labels = c("Related", "Unrelated"))) %>%
+  ggplot(aes(x = ACNUnfiltered, y = zRT_trim, group = Decision, color = Decision))+
+  geom_point()+
+#  geom_smooth(method = "loess")+
+geom_line()+
+   geom_errorbar(aes(ymin=zRT_trim - ci, ymax=zRT_trim + ci), 
+              width=.2, color = "gray30", 
+              position = position_dodge(0.05))+
+ theme_few()+
+    ylim(-0.35, 0.35)+
+  scale_color_wsj()+
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,10,15,20))+
+    xlab("ACN Unfiltered Quintile") + ylab("z-RT") + 
+  ggtitle("ACN Unfiltered Network")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+
+```
+
+## ACN.1
+```{r}
+items_acn.1= group_by(final_sem, ACN_0.1) %>%
+  summarise(items = n())
+
+items_acn.1_subject = group_by(final_sem, subject, ACN_0.1) %>%
+  summarise(items = n())
+
+acn.1_rmisc = Rmisc::summarySE(items_acn.1_subject, 
+                        measurevar = "items",
+                        groupvars = c("ACN_0.1"))
+
+
+# final_sem$undirectedpmfgfac = ordered(as.factor(as.character(final_sem$UndirectedPMFG)), 
+#                             levels = c("1", "2", "3", "4"))
+
+final_sem$ACN_0.1 =  as.factor(final_sem$ACN_0.1)
+contrasts(final_sem$ACN_0.1) = contr.treatment(3, base = 2)
+
+m_acn.1 = lmer(data = final_sem, zRT_trim~ ACN_0.1 +
+                     mean_len + mean_logf + mean_ldtz + mean_conc +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_acn.1)
+
+m_acn.1_type = lmer(data = final_sem, zRT_trim~ ACN_0.1*Type +
+                     mean_len_c + mean_logf_c + mean_ldtz_c + mean_conc_c +
+           (1|subject) + (1|trial_index) +
+              + (1|target_word))
+summary(m_acn.1)
+car::Anova(m_acn.1)
+```
+
+
+### Plot Item Distribution
+
+```{r}
+ggplot(acn.1_rmisc, aes(x = ACN_0.1, y = items))+
+ geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
+ theme_few()+
+  xlab("Non-directed Path Length") + ylab("Number of Items") + 
+  ggtitle("ACN 0.1 Network Item Distribution")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+```
+
+### Plot ACN unfiltered
+```{r}
+z_acn.1_rmisc = Rmisc::summarySE(final_sem, 
+                        measurevar = "zRT_trim",
+                        groupvars = c("ACN_0.1", "Type"))
+
+# z_undirected_rmisc$undirectedfac = ordered(as.factor(as.character(z_undirected_rmisc$undirectedfac)),                             levels = c("1", "2", "3", "4"))
+
+z_acn.1_rmisc$zRT_trim = as.numeric(z_acn.1_rmisc$zRT_trim)
+
+library(ggplot2)
+library(ggthemes)
+
+z_acn.1_rmisc %>% 
+  mutate(Decision = factor(Type, 
+    levels = unique(Type),
+                    labels = c("Related", "Unrelated"))) %>%
+  ggplot(aes(x = ACN_0.1, y = zRT_trim, group = Decision, color = Decision))+
+  geom_point()+
+#  geom_smooth(method = "loess")+
+geom_line()+
+   geom_errorbar(aes(ymin=zRT_trim - ci, ymax=zRT_trim + ci), 
+              width=.2, color = "gray30", 
+              position = position_dodge(0.05))+
+ theme_few()+
+    ylim(-0.35, 0.35)+
+  scale_color_wsj()+
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,10,15,20))+
+    xlab("ACN_0.1 Path Length") + ylab("z-RT") + 
+  ggtitle("ACN 0.1 Network")  +
+   theme(axis.text = element_text(size = rel(1)),
+          axis.title = element_text(face = "bold", size = rel(1)),
+          legend.title = element_text(face = "bold", size = rel(1)),
+         plot.title = element_text(hjust = .5),
+         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+
+```
+
+
 
 
 ## Directed
@@ -2059,8 +2569,42 @@ colnames(x) = "measure"
 x$measure = c(5,4,3,2,1)
 LSA_cosine_agg = cbind(x, LSA_cosine_agg)
 
+## adding representation column
+z_undirected_pmfg_rmisc$Representation = "Undirected PMFG"
+z_acn_unfiltered_rmisc$Representation = "ACN Unfiltered"
+z_acn_unfiltered_rmisc = z_acn_unfiltered_rmisc[,-8]
+z_acn.1_rmisc$Representation = "ACN_0.1"
+
+# changing colnames
+
+colnames(z_acn_unfiltered_rmisc) = c("measure", "Type", "N",
+                                     "zRT_trim", "sd", "se", "ci", "Representation")
+colnames(z_undirected_pmfg_rmisc) = c("measure", "Type", "N",
+                                     "zRT_trim", "sd", "se", "ci", "Representation")
+colnames(z_acn.1_rmisc) = c("measure", "Type", "N",
+                                     "zRT_trim", "sd", "se", "ci", "Representation")
+
+## keeping only Related PL1 trials and all other Unrelated trials
+z_acn_unfiltered_rmisc$measure = as.numeric(z_acn_unfiltered_rmisc$measure)
+z_acn_unfiltered_rmisc$measure =   7-as.numeric(z_acn_unfiltered_rmisc$measure)
+
+z_acn_unfiltered_rmisc = z_acn_unfiltered_rmisc %>%
+  filter((Type == "Related" & measure == 1) | 
+           (Type == "Unrelated" & measure != 1))
+
+z_acn.1_rmisc = z_acn.1_rmisc %>%
+  filter((Type == "Related" & measure == 1) | 
+           (Type == "Unrelated" & measure != 1))
+
+z_undirected_pmfg_rmisc = z_undirected_pmfg_rmisc %>%
+  filter((Type == "Related" & measure == 1) | 
+           (Type == "Unrelated" & measure != 1))
+
 combined_zrt_plot  = rbind(z_sem_rt_rel_agg_rmisc,
+                           z_acn_unfiltered_rmisc,
+                           z_acn.1_rmisc,
                            z_undirected_rmisc,
+                           z_undirected_pmfg_rmisc,
                           z_directed_rmisc,
                           word2vec_cosine_agg,
                           LSA_cosine_agg)
@@ -2069,11 +2613,16 @@ combined_zrt_plot$measurefac = ordered(as.factor(as.character(combined_zrt_plot$
                             levels = c("1", "2", "3", "4", "5", "6", 
                                        "15"))
 
+combined_zrt_plot$Representation= ifelse(combined_zrt_plot$Representation == "ACN",
+                                         "ACN PMFG",combined_zrt_plot$Representation )
+
 combined_zrt_plot$Representation =ordered(as.factor(as.character(combined_zrt_plot$Representation)), 
-    levels = c("ACN", "Undirected SDN", "Directed SDN", "LSA", "word2vec"))
+    levels = c("ACN PMFG", "ACN Unfiltered", "ACN_0.1",
+               "Undirected SDN","Undirected PMFG",
+               "Directed SDN", "LSA", "word2vec"))
 
 combined_zrt_plot1 =combined_zrt_plot %>%
-  filter(!Representation %in% c("word2vec", "LSA"))
+  filter(!Representation %in% c( "word2vec", "LSA"))
 
 combined_zrt_plot1 %>% 
   ggplot(aes(x = measurefac, y = zRT_trim, 
@@ -2088,6 +2637,7 @@ geom_line(size = 1)+
   #scale_x_continuous(breaks = c(1,2,3,4,5,6,10,15,20))+
     xlab("Network Path Length") + ylab("Standardized RT") + 
   ggtitle("Experiment 1: Relatedness Judgments")  +
+  ylim(-0.28, 0.15)+
    theme(axis.text = element_text(size = rel(1)),
           axis.title = element_text(face = "bold", size = rel(1)),
           legend.title = element_text(face = "bold", size = rel(1)),
@@ -3621,6 +4171,7 @@ kenett_e1$Network = "Experiment 1"
 
 kenett_replicate = rbind(kenett_original, kenett_e1)
 kenett_replicate$pathlengthfac  = as.factor(kenett_replicate$pathlength)
+
 
 kenett_replicate %>% 
   ggplot(aes(x = pathlengthfac, y = rt, 
